@@ -74,6 +74,7 @@ typedef struct {
 server svr;  // server
 request* requestP = NULL;  // point to a list of requests
 train_info trains[TRAIN_NUM];
+record *recordP = NULL; // point to a list of records
 int maxfd;  // size of open file descriptor table, size of request list
 int num_conn = 1;
 int alive_conn = 0;
