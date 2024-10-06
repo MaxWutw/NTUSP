@@ -45,6 +45,48 @@ int accept_conn(void);
 static void getfilepath(char* filepath, int extension);
 // get record filepath
 
+int8_t checkCurr(record *recP, int32_t checkNum){
+	/* Return value:
+	 * 1: occupied
+	 * 2: choosed
+	 * 0: available
+	 * -1: error
+	 */
+	int32_t row = (checkNum - 1) / 4;
+	int32_t col = (checkNum - 1) % 4;
+	off_t offset = row * 8 + col * 2;
+	lseek(recP->train_fd, 0, SEEK_SET);
+	if(lseek(recP->train_fd, offset, SEEK_SET) == (off_t)-1){
+		return -1;
+	}
+	char tbuf[2];
+	int32_t ret = read(recP->train_fd, tbuf, 1);
+	if(ret < 0){
+		return -1;
+	}
+	lseek(recP->train_fd, 0, SEEK_SET);
+	if(tbuf[0] == '0'){
+		return 0;
+	}
+	else if(tbuf[0] == '1'){
+		return 1;
+	}
+	else if(tbuf[0] == '2'){
+		return 2;
+	}
+	return -1;
+}
+
+int8_t addORcancel(int32_t seatINP, record* recP){
+	/* Return value:
+	 * 1: add
+	 * 0: cancel
+	 * -1: error
+	 */
+	if(recP->seat_stat[seatINP - 1] == CHOSEN) return 0;
+	return 1;
+}
+
 int8_t occupied(int32_t fd){
 	/* Return value:
 	 * 1: is fully occupied
@@ -113,6 +155,9 @@ int print_train_info(request *reqP) {
     return 0;
 }
 #else
+int cmp(const void *a, const void *b){
+	return (*(int*)a > *(int*)b);
+}
 int print_train_info(request *reqP, record *recP) {
     /*
      * Booking info
@@ -123,7 +168,35 @@ int print_train_info(request *reqP, record *recP) {
     char buf[MAX_MSG_LEN*3];
     char chosen_seat[MAX_MSG_LEN] = {'\0'};
     char paid[MAX_MSG_LEN] = {'\0'};
+	// qsort(recP->seat_stat, recP->num_of_chosen_seats, sizeof(int32_t), cmp);
+	int8_t first = true;
+	for(int32_t i = 0;i < 40;i++){
+		char tmp[32] = {'\0'};
+		if(recP->seat_stat[i] == CHOSEN){
+			if(first){
+				first = false;
+				snprintf(tmp, 32, "%d", i + 1);
+			}
+			else{
+				snprintf(tmp, 32, ",%d", i + 1);
+			}
+		}
+		strncat(chosen_seat, tmp, 32);
+	}
 
+	first = true;
+	for(int32_t i = 0;i < 40;i++){
+		char tmp[32] = {'\0'};
+		if(recP->seat_stat[i] == PAID){
+			if(first){
+				first = false;
+				snprintf(tmp, 32, "%d", i + 1);
+			}
+			else
+				snprintf(tmp, 32, ",%d", i + 1);
+		}
+		strncat(paid, tmp, 32);
+	}
     memset(buf, 0, sizeof(buf));
     sprintf(buf, "\nBooking info\n"
                  "|- Shift ID: %d\n"
@@ -200,10 +273,11 @@ int main(int argc, char** argv) {
 				write(requestP[conn_fd].conn_fd, read_shift_msg, strlen(read_shift_msg));
 #elif defined WRITE_SERVER
 				write(requestP[conn_fd].conn_fd, write_shift_msg, strlen(write_shift_msg));
+				requestP[conn_fd].status = SHIFT;
 #endif
 			}
 		}
-        // TODO: handle requests from clients
+        // TODO: handle jequests from clients
 		for(int i = 0;i < maxfd;i++){
 			int client_fd = requestP[i].conn_fd;
 			if(client_fd != -1 && FD_ISSET(client_fd, &read_fds)){
@@ -214,6 +288,7 @@ int main(int argc, char** argv) {
 				}
 				if(ret == 0){
 					close(requestP[i].conn_fd);
+					free_record(&recordP[i]);
 					free_request(&requestP[i]);
 					break;
 				}
@@ -227,6 +302,7 @@ int main(int argc, char** argv) {
 				if(ret < 0){
 					fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
 					close(requestP[i].conn_fd);
+					free_record(&recordP[i]);
 					free_request(&requestP[i]);
 					break;
 				}
@@ -235,30 +311,169 @@ int main(int argc, char** argv) {
 				ret = write(requestP[i].conn_fd, trainInfo, strlen(trainInfo));
 				write(requestP[conn_fd].conn_fd, read_shift_msg, strlen(read_shift_msg));
 #elif defined WRITE_SERVER
-				sprintf(buf,"%s : %s\n",accept_write_header,requestP[i].buf);
-				write(requestP[i].conn_fd, buf, strlen(buf)); 
-				char trainInfo[1024];
-				int readTrainNum = atoi(requestP[conn_fd].buf) - TRAIN_ID_START;
-				if(occupied(trains[readTrainNum].file_fd)){
-					ret = write(requestP[i].conn_fd, full_msg, strlen(full_msg));
-					if(ret < 0){
+				if(requestP[i].status == SHIFT){
+					sprintf(buf,"%s : %s\n",accept_write_header,requestP[i].buf);
+					write(requestP[i].conn_fd, buf, strlen(buf)); 
+					char trainInfo[1024];
+					int readTrainNum = atoi(requestP[conn_fd].buf) - TRAIN_ID_START;
+					if(occupied(trains[readTrainNum].file_fd)){
+						ret = write(requestP[i].conn_fd, full_msg, strlen(full_msg));
+						if(ret < 0){
+							fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+							close(requestP[i].conn_fd);
+							free_record(&recordP[i]);
+							free_request(&requestP[i]);
+							break;
+						}
+						write(requestP[i].conn_fd, write_shift_msg, strlen(write_shift_msg));
+					}
+					else if(occupied(trains[readTrainNum].file_fd) == 0){
+						recordP[i].shift_id = atoi(requestP[i].buf);
+						recordP[i].train_fd = trains[readTrainNum].file_fd;
+						requestP[i].status = SEAT; 
+						print_train_info(&requestP[i], &recordP[i]);
+						write(requestP[i].conn_fd, write_seat_msg, strlen(write_seat_msg));
+					}
+					else if(occupied(trains[readTrainNum].file_fd) == -1){
 						fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
 						close(requestP[i].conn_fd);
+						free_record(&recordP[i]);
 						free_request(&requestP[i]);
 						break;
 					}
-					write(requestP[conn_fd].conn_fd, write_shift_msg, strlen(write_shift_msg));
 				}
-				else if(occupied(trains[readTrainNum].file_fd) == 0){
-					recordP[i].shift_id = atoi(requestP[i].buf);
-					print_train_info(&requestP[i], &recordP[i]);
+				else{
+					sprintf(buf,"%s : %s\n",accept_write_header,requestP[i].buf);
+					write(requestP[i].conn_fd, buf, strlen(buf)); 
+					if(requestP[i].status == BOOKED){
+						if(strcmp(requestP[i].buf, "exit") == 0){
+							close(requestP[i].conn_fd);
+							free_record(&recordP[i]);
+							free_request(&requestP[i]);
+							break;
+						}
+						else if(strcmp(requestP[i].buf, "seat") == 0){
+							requestP[i].status = SEAT;
+							print_train_info(&requestP[i], &recordP[i]);
+							write(requestP[i].conn_fd, write_seat_msg, strlen(write_seat_msg));
+							continue;
+						}
+					}
+					if(requestP[i].status == SEAT && strcmp(requestP[i].buf, "pay") == 0){
+						if(recordP[i].num_of_chosen_seats == 0){
+							write(requestP[i].conn_fd, no_seat_msg, strlen(no_seat_msg));
+							continue;
+						}
+						else{
+							int32_t trainFd = recordP[i].train_fd;
+							lseek(trainFd, 0, SEEK_SET);
+							for(int j = 0;j < 40;j++){
+								if(recordP[i].seat_stat[j] == CHOSEN){
+									recordP[i].seat_stat[j] = PAID;
+									requestP[i].status = BOOKED;
+									recordP[i].num_of_chosen_seats--;
+									int32_t row = j / 4;
+									int32_t col = j % 4;
+									off_t offset = row * 8 + col * 2;
+									if(lseek(trainFd, offset, SEEK_SET) == (off_t)-1){
+										close(trainFd);
+										free_record(&recordP[i]);
+										free_request(&requestP[i]);
+										ERR_EXIT("lseek");
+									}			
+									if(write(trainFd, "1", 1) < 0){	
+										close(trainFd);
+										free_record(&recordP[i]);
+										free_request(&requestP[i]);
+										ERR_EXIT("lseek");
+									}
+									fsync(trainFd);
+									lseek(trainFd, 0, SEEK_SET);
+								}
+							}		
+							write(requestP[i].conn_fd, book_succ_msg, strlen(book_succ_msg));
+							print_train_info(&requestP[i], &recordP[i]);
+							write(requestP[i].conn_fd, write_seat_or_exit_msg, strlen(write_seat_or_exit_msg));
+						}
+						continue;
+					}
+					int32_t bookNum = atoi(requestP[i].buf);
+					int32_t trainFd = recordP[i].train_fd;
+					if(addORcancel(bookNum, &recordP[i])){
+						if(checkCurr(&recordP[i], bookNum) == 0){
+							recordP[i].seat_stat[bookNum - 1] = CHOSEN;
+							recordP[i].num_of_chosen_seats++;
+							int32_t row = (bookNum - 1) / 4;
+							int32_t col = (bookNum - 1) % 4;
+							off_t offset = row * 8 + col * 2;
+							if(lseek(trainFd, offset, SEEK_SET) == (off_t)-1){
+								close(trainFd);
+								free_record(&recordP[i]);
+								free_request(&requestP[i]);
+								ERR_EXIT("lseek");
+							}			
+							if(write(trainFd, "2", 1) < 0){	
+								close(trainFd);
+								free_record(&recordP[i]);
+								free_request(&requestP[i]);
+								ERR_EXIT("lseek");
+							}
+							fsync(trainFd);
+							lseek(trainFd, 0, SEEK_SET);
+							// for debug start
+							char trainInfo[1024];
+							ret = read(recordP[i].train_fd, trainInfo, sizeof(trainInfo) - 1);
+							if(ret < 0){
+								fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+								close(requestP[i].conn_fd);
+								free_request(&requestP[i]);
+								free_record(&recordP[i]);
+								break;
+							}
+							lseek(recordP[i].train_fd, 0, SEEK_SET);
+							trainInfo[ret] = '\0';
+							ret = write(requestP[i].conn_fd, trainInfo, strlen(trainInfo));
+							// for debug end
+							print_train_info(&requestP[i], &recordP[i]);
+						}
+						else if(checkCurr(&recordP[i], bookNum) == 1){
+							write(requestP[i].conn_fd, seat_booked_msg, strlen(seat_booked_msg));
+						}
+						else if(checkCurr(&recordP[i], bookNum) == 2){
+							write(requestP[i].conn_fd, lock_msg, strlen(lock_msg));
+						}
+						else{
+							fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+							close(requestP[i].conn_fd);
+							free_request(&requestP[i]);
+							free_record(&recordP[i]);
+							break;
+						}
+					}
+					else if(addORcancel(bookNum, &recordP[i]) == 0){
+						recordP[i].seat_stat[bookNum - 1] = UNKNOWN;
+						recordP[i].num_of_chosen_seats--;
+						int32_t row = (bookNum - 1) / 4;
+						int32_t col = (bookNum - 1) % 4;
+						off_t offset = row * 8 + col * 2;
+						if(lseek(trainFd, offset, SEEK_SET) == (off_t)-1){
+							close(trainFd);
+							free_record(&recordP[i]);
+							free_request(&requestP[i]);
+							ERR_EXIT("lseek");
+						}			
+						if(write(trainFd, "0", 1) < 0){	
+							close(trainFd);
+							free_record(&recordP[i]);
+							free_request(&requestP[i]);
+							ERR_EXIT("lseek");
+						}
+						fsync(trainFd);
+						lseek(trainFd, 0, SEEK_SET);
+						write(requestP[i].conn_fd, cancel_msg, strlen(cancel_msg));
+						print_train_info(&requestP[i], &recordP[i]);
+					}
 					write(requestP[i].conn_fd, write_seat_msg, strlen(write_seat_msg));
-				}
-				else if(occupied(trains[readTrainNum].file_fd) == -1){
-					fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
-					close(requestP[i].conn_fd);
-					free_request(&requestP[i]);
-					break;
 				}
 #endif
 			}
