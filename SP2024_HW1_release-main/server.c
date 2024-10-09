@@ -45,9 +45,29 @@ int accept_conn(void);
 static void getfilepath(char* filepath, int extension);
 // get record filepath
 
-int check_timeout(request* reqP) {
-    return (reqP->remaining_time.tv_sec == 0 && reqP->remaining_time.tv_usec == 0);
+void lock_file(int32_t fd, short lock_type){
+	struct flock lock;
+	lock.l_type = lock_type;
+	lock.l_whence = SEEK_SET;
+	lock.l_start = 0;
+	lock.l_len = 0;
+	lock.l_pid = getpid();
+	if(fcntl(fd, F_SETLKW, &lock) == -1){
+		ERR_EXIT("fcntl");
+	}
 }
+
+void unlock_file(int32_t fd){
+	struct flock lock;
+	lock.l_whence = SEEK_SET;
+	lock.l_start = 0;
+	lock.l_len = 0;
+	lock.l_type = F_UNLCK;
+	if(fcntl(fd, F_SETLK, &lock) == -1){
+		ERR_EXIT("fcntl");
+	}
+}
+
 int8_t checkCurr(record *recP, int32_t checkNum){
 	/* Return value:
 	 * 1: occupied
@@ -59,6 +79,7 @@ int8_t checkCurr(record *recP, int32_t checkNum){
 	int32_t col = (checkNum - 1) % 4;
 	off_t offset = row * 8 + col * 2;
 	lseek(recP->train_fd, 0, SEEK_SET);
+	lock_file(recP->train_fd, F_RDLCK);
 	if(lseek(recP->train_fd, offset, SEEK_SET) == (off_t)-1){
 		return -1;
 	}
@@ -68,6 +89,7 @@ int8_t checkCurr(record *recP, int32_t checkNum){
 		return -1;
 	}
 	lseek(recP->train_fd, 0, SEEK_SET);
+	unlock_file(recP->train_fd);
 	if(tbuf[0] == '0'){
 		return 0;
 	}
@@ -97,11 +119,13 @@ int8_t occupied(int32_t fd){
 	 * -1: read failed
 	 */
 	char tbuf[1024];
+	lock_file(fd, F_RDLCK);
 	int32_t ret = read(fd, tbuf, sizeof(tbuf) - 1);
 	if(ret < 0){
 		return -1;
 	}
 	lseek(fd, 0, SEEK_SET);
+	unlock_file(fd);
 	tbuf[ret] = '\0';
 	for(int i = 0;tbuf[i] != '\0';i++){
 		if(tbuf[i] == '0') return 0;
@@ -340,6 +364,7 @@ int main(int argc, char** argv) {
 				char trainInfo[1024];
 				int readTrainNum = atoi(requestP[conn_fd].buf) - TRAIN_ID_START;
 				// printf("client file descriptor: %d\n", i);
+				lock_file(trains[readTrainNum].file_fd, F_RDLCK);
 				ret = read(trains[readTrainNum].file_fd, trainInfo, sizeof(trainInfo) - 1);
 				if(ret < 0){
 					fprintf(stderr, "Failed to read %s\n", requestP[i].buf);
@@ -349,6 +374,7 @@ int main(int argc, char** argv) {
 					break;
 				}
 				lseek(trains[readTrainNum].file_fd, 0, SEEK_SET);
+				unlock_file(trains[readTrainNum].file_fd);
 				trainInfo[ret] = '\0';
 				ret = write(requestP[i].conn_fd, trainInfo, strlen(trainInfo));
 				write(requestP[conn_fd].conn_fd, read_shift_msg, strlen(read_shift_msg));
@@ -441,6 +467,7 @@ int main(int argc, char** argv) {
 										free_request(&requestP[i]);
 										ERR_EXIT("lseek");
 									}			
+									lock_file(trainFd, F_WRLCK);
 									if(write(trainFd, "1", 1) < 0){	
 										close(trainFd);
 										free_record(&recordP[i]);
@@ -448,6 +475,7 @@ int main(int argc, char** argv) {
 										ERR_EXIT("lseek");
 									}
 									fsync(trainFd);
+									unlock_file(trainFd);
 									lseek(trainFd, 0, SEEK_SET);
 								}
 							}		
@@ -478,7 +506,8 @@ int main(int argc, char** argv) {
 								free_record(&recordP[i]);
 								free_request(&requestP[i]);
 								ERR_EXIT("lseek");
-							}			
+							}
+							lock_file(trainFd, F_WRLCK);
 							if(write(trainFd, "2", 1) < 0){	
 								close(trainFd);
 								free_record(&recordP[i]);
@@ -486,6 +515,7 @@ int main(int argc, char** argv) {
 								ERR_EXIT("lseek");
 							}
 							fsync(trainFd);
+							unlock_file(trainFd);
 							lseek(trainFd, 0, SEEK_SET);
 							// for debug start
 							/*
@@ -530,7 +560,8 @@ int main(int argc, char** argv) {
 							free_record(&recordP[i]);
 							free_request(&requestP[i]);
 							ERR_EXIT("lseek");
-						}			
+						}
+						lock_file(trainFd, F_WRLCK);
 						if(write(trainFd, "0", 1) < 0){	
 							close(trainFd);
 							free_record(&recordP[i]);
@@ -538,6 +569,7 @@ int main(int argc, char** argv) {
 							ERR_EXIT("lseek");
 						}
 						fsync(trainFd);
+						unlock_file(trainFd);
 						lseek(trainFd, 0, SEEK_SET);
 						write(requestP[i].conn_fd, cancel_msg, strlen(cancel_msg));
 						print_train_info(&requestP[i], &recordP[i]);
