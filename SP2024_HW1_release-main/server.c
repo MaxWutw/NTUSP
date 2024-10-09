@@ -45,6 +45,9 @@ int accept_conn(void);
 static void getfilepath(char* filepath, int extension);
 // get record filepath
 
+int check_timeout(request* reqP) {
+    return (reqP->remaining_time.tv_sec == 0 && reqP->remaining_time.tv_usec == 0);
+}
 int8_t checkCurr(record *recP, int32_t checkNum){
 	/* Return value:
 	 * 1: occupied
@@ -249,26 +252,13 @@ int main(int argc, char** argv) {
     while(1){
         // TODO: Add IO multiplexing
         // Check new connection
-		FD_ZERO(&read_fds);
-		read_fds = all_fds;
-		for(int i = 0;i < maxfd;i++){
-			if(requestP[i].conn_fd != -1){
-				FD_SET(requestP[i].conn_fd, &read_fds);
-			}
-		}
-		int32_t activity = 0;
-#ifdef READ_SERVER
-		activity = select(maxfd + 1, &read_fds, NULL, NULL, NULL);
-#elif defined WRITE_SERVER
-		activity = select(maxfd + 1, &read_fds, NULL, NULL, NULL);
-#endif
-		if(activity < 0){
-			ERR_EXIT("select failed.");
-		}
+
 		if(FD_ISSET(svr.listen_fd, &read_fds)){
 			conn_fd = accept_conn();
 			if(conn_fd >= 0){
 				write(requestP[conn_fd].conn_fd, welcome_banner, strlen(welcome_banner));
+				gettimeofday(&requestP[conn_fd].remaining_time, NULL);
+				requestP[conn_fd].status = SHIFT;
 #ifdef READ_SERVER
 				write(requestP[conn_fd].conn_fd, read_shift_msg, strlen(read_shift_msg));
 #elif defined WRITE_SERVER
@@ -277,6 +267,42 @@ int main(int argc, char** argv) {
 #endif
 			}
 		}
+		FD_ZERO(&read_fds);
+		read_fds = all_fds;
+		for(int i = 0;i < maxfd;i++){
+			if(requestP[i].conn_fd != -1){
+				FD_SET(requestP[i].conn_fd, &read_fds);
+			}
+		}
+		int32_t activity = 0;
+		struct timeval timeout;
+		timeout.tv_sec = 5;
+		timeout.tv_usec = 0;
+#ifdef READ_SERVER
+		activity = select(maxfd + 1, &read_fds, NULL, NULL, &timeout);
+#elif defined WRITE_SERVER
+		activity = select(maxfd + 1, &read_fds, NULL, NULL, &timeout);
+#endif
+		if(activity < 0){
+			ERR_EXIT("select failed.");
+		}
+
+		struct timeval curr_time;
+		gettimeofday(&curr_time, NULL);
+		for(int32_t i = 0;i < maxfd;i++){
+			if(requestP[i].conn_fd != -1 && requestP[i].conn_fd != svr.listen_fd){
+				// printf("%ld\n", curr_time.tv_sec);
+				// printf("%ld\n", requestP[i].remaining_time.tv_sec);
+				if(curr_time.tv_sec - requestP[i].remaining_time.tv_sec >= 100){
+					printf("%d\n", i);
+					close(requestP[i].conn_fd);
+					free_record(&recordP[i]);
+					free_request(&requestP[i]);
+				}
+			}
+		}
+		
+		
         // TODO: handle jequests from clients
 		for(int i = 0;i < maxfd;i++){
 			int client_fd = requestP[i].conn_fd;
@@ -292,15 +318,31 @@ int main(int argc, char** argv) {
 					free_request(&requestP[i]);
 					break;
 				}
+				if(strcmp(requestP[i].buf, "exit") == 0){
+					write(requestP[i].conn_fd, exit_msg, strlen(exit_msg));
+					close(requestP[i].conn_fd);
+					free_record(&recordP[i]);
+					free_request(&requestP[i]);
+					continue;
+				}
 #ifdef READ_SERVER      
+				if(strcmp(requestP[i].buf, "902001") != 0 && strcmp(requestP[i].buf, "902002") != 0 \
+						&& strcmp(requestP[i].buf, "902003") != 0 && strcmp(requestP[i].buf, "902004") != 0 \
+						&& strcmp(requestP[i].buf, "902005") != 0){
+					write(requestP[i].conn_fd, invalid_op_msg, strlen(invalid_op_msg));
+					close(requestP[i].conn_fd);
+					free_record(&recordP[i]);
+					free_request(&requestP[i]);
+					continue;
+				}
 				sprintf(buf,"%s : %s\n",accept_read_header,requestP[i].buf);
-				write(requestP[i].conn_fd, buf, strlen(buf));
+				// write(requestP[i].conn_fd, buf, strlen(buf));
 				char trainInfo[1024];
 				int readTrainNum = atoi(requestP[conn_fd].buf) - TRAIN_ID_START;
 				// printf("client file descriptor: %d\n", i);
 				ret = read(trains[readTrainNum].file_fd, trainInfo, sizeof(trainInfo) - 1);
 				if(ret < 0){
-					fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+					fprintf(stderr, "Failed to read %s\n", requestP[i].buf);
 					close(requestP[i].conn_fd);
 					free_record(&recordP[i]);
 					free_request(&requestP[i]);
@@ -312,14 +354,23 @@ int main(int argc, char** argv) {
 				write(requestP[conn_fd].conn_fd, read_shift_msg, strlen(read_shift_msg));
 #elif defined WRITE_SERVER
 				if(requestP[i].status == SHIFT){
+					if(strcmp(requestP[i].buf, "902001") != 0 && strcmp(requestP[i].buf, "902002") != 0 \
+							&& strcmp(requestP[i].buf, "902003") != 0 && strcmp(requestP[i].buf, "902004") != 0 \
+							&& strcmp(requestP[i].buf, "902005") != 0){
+						write(requestP[i].conn_fd, invalid_op_msg, strlen(invalid_op_msg));
+						close(requestP[i].conn_fd);
+						free_record(&recordP[i]);
+						free_request(&requestP[i]);
+						continue;
+					}
 					sprintf(buf,"%s : %s\n",accept_write_header,requestP[i].buf);
-					write(requestP[i].conn_fd, buf, strlen(buf)); 
+					// write(requestP[i].conn_fd, buf, strlen(buf)); 
 					char trainInfo[1024];
 					int readTrainNum = atoi(requestP[conn_fd].buf) - TRAIN_ID_START;
 					if(occupied(trains[readTrainNum].file_fd)){
 						ret = write(requestP[i].conn_fd, full_msg, strlen(full_msg));
 						if(ret < 0){
-							fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+							fprintf(stderr, "Failed to read %s\n", requestP[i].buf);
 							close(requestP[i].conn_fd);
 							free_record(&recordP[i]);
 							free_request(&requestP[i]);
@@ -335,7 +386,7 @@ int main(int argc, char** argv) {
 						write(requestP[i].conn_fd, write_seat_msg, strlen(write_seat_msg));
 					}
 					else if(occupied(trains[readTrainNum].file_fd) == -1){
-						fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+						fprintf(stderr, "Failed to read %s\n", requestP[i].buf);
 						close(requestP[i].conn_fd);
 						free_record(&recordP[i]);
 						free_request(&requestP[i]);
@@ -344,7 +395,7 @@ int main(int argc, char** argv) {
 				}
 				else{
 					sprintf(buf,"%s : %s\n",accept_write_header,requestP[i].buf);
-					write(requestP[i].conn_fd, buf, strlen(buf)); 
+					// write(requestP[i].conn_fd, buf, strlen(buf)); 
 					if(requestP[i].status == BOOKED){
 						if(strcmp(requestP[i].buf, "exit") == 0){
 							close(requestP[i].conn_fd);
@@ -358,10 +409,19 @@ int main(int argc, char** argv) {
 							write(requestP[i].conn_fd, write_seat_msg, strlen(write_seat_msg));
 							continue;
 						}
+						else{
+							write(requestP[i].conn_fd, invalid_op_msg, strlen(invalid_op_msg));
+							close(requestP[i].conn_fd);
+							free_record(&recordP[i]);
+							free_request(&requestP[i]);
+							continue;
+						}
 					}
 					if(requestP[i].status == SEAT && strcmp(requestP[i].buf, "pay") == 0){
 						if(recordP[i].num_of_chosen_seats == 0){
 							write(requestP[i].conn_fd, no_seat_msg, strlen(no_seat_msg));
+							print_train_info(&requestP[i], &recordP[i]);
+							write(requestP[i].conn_fd, write_seat_msg, strlen(write_seat_msg));
 							continue;
 						}
 						else{
@@ -400,6 +460,13 @@ int main(int argc, char** argv) {
 					int32_t bookNum = atoi(requestP[i].buf);
 					int32_t trainFd = recordP[i].train_fd;
 					if(addORcancel(bookNum, &recordP[i])){
+						if(bookNum == 0){
+							write(requestP[i].conn_fd, invalid_op_msg, strlen(invalid_op_msg));
+							close(requestP[i].conn_fd);
+							free_record(&recordP[i]);
+							free_request(&requestP[i]);
+							continue;
+						}
 						if(checkCurr(&recordP[i], bookNum) == 0){
 							recordP[i].seat_stat[bookNum - 1] = CHOSEN;
 							recordP[i].num_of_chosen_seats++;
@@ -421,10 +488,11 @@ int main(int argc, char** argv) {
 							fsync(trainFd);
 							lseek(trainFd, 0, SEEK_SET);
 							// for debug start
+							/*
 							char trainInfo[1024];
 							ret = read(recordP[i].train_fd, trainInfo, sizeof(trainInfo) - 1);
 							if(ret < 0){
-								fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+								fprintf(stderr, "Failed to read %s\n", requestP[i].buf);
 								close(requestP[i].conn_fd);
 								free_request(&requestP[i]);
 								free_record(&recordP[i]);
@@ -433,6 +501,7 @@ int main(int argc, char** argv) {
 							lseek(recordP[i].train_fd, 0, SEEK_SET);
 							trainInfo[ret] = '\0';
 							ret = write(requestP[i].conn_fd, trainInfo, strlen(trainInfo));
+							*/
 							// for debug end
 							print_train_info(&requestP[i], &recordP[i]);
 						}
@@ -443,7 +512,7 @@ int main(int argc, char** argv) {
 							write(requestP[i].conn_fd, lock_msg, strlen(lock_msg));
 						}
 						else{
-							fprintf(stderr, "Failed to read %s\n", atoi(requestP[i].buf));
+							fprintf(stderr, "Failed to read %s\n", requestP[i].buf);
 							close(requestP[i].conn_fd);
 							free_request(&requestP[i]);
 							free_record(&recordP[i]);

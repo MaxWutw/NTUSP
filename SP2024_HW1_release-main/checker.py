@@ -1,4 +1,5 @@
 import subprocess
+import traceback
 import telnetlib
 import socket
 import time
@@ -504,6 +505,8 @@ def testcase1_1(io):
 
         return 0.1
     except Exception as e:
+        print(e)
+        traceback.print_exc()
         red("Testcase 1-1: failed", io)
         return 0
 
