@@ -106,7 +106,7 @@ please do above 2 functions to save some time
 int main(int argc, char *argv[]) {
     // Hi! Welcome to SP Homework 2, I hope you have fun
     pid_t process_pid = getpid(); // you might need this when using fork()
-    if (argc != 2) {
+    if(argc != 2){
         fprintf(stderr, "Usage: ./friend [friend_info]\n");
         return 0;
     }
@@ -139,9 +139,27 @@ int main(int argc, char *argv[]) {
         4.1 command passing may be required here
     5. after previous command is done, repeat step 1.
     */
+	char inp[4096];
+	fscanf(stdin, "%[^\n]", inp);
+	getchar();
+	char *command;
+	command = strtok(inp, " ");
+	fprintf(stdout, "%s\n", command);
 
     // Hint: do not return before receiving the command "Graduate"
     // please keep in mind that every process runs this exact same program, so think of all the possible cases and implement them
+	if(strcmp(command, "Meet") == 0){
+		char *parent, *child;
+		int32_t childVal = 0;
+		char childName[128];
+		parent = strtok(NULL, " ");
+		child = strtok(NULL, " ");
+		sscanf(child, "%s_%d", childName, &childVal);
+		// printf("%s\n%s\n", parent, child);
+		printf("%s %d\n", childName, childVal);
+		int32_t pipeArr[2];
+
+	}
 
     /* pseudo code
     if(Meet){
