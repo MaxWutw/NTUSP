@@ -106,6 +106,7 @@ please do above 2 functions to save some time
 int main(int argc, char *argv[]) {
     // Hi! Welcome to SP Homework 2, I hope you have fun
     pid_t process_pid = getpid(); // you might need this when using fork()
+	printf("Current process pid: %d\n", process_pid);
     if(argc != 2){
         fprintf(stderr, "Usage: ./friend [friend_info]\n");
         return 0;
@@ -127,6 +128,7 @@ int main(int argc, char *argv[]) {
         // extract name and value from info
         // where do you read from?
         // anything else you have to do before you start taking commands?
+		printf("process id: %d\n", process_pid);
     }
 
     //TODO:
@@ -139,12 +141,12 @@ int main(int argc, char *argv[]) {
         4.1 command passing may be required here
     5. after previous command is done, repeat step 1.
     */
-	char inp[4096];
-	fscanf(stdin, "%[^\n]", inp);
+	char cmd[MAX_CMD_LEN];
+	fscanf(stdin, "%[^\n]", cmd);
 	getchar();
 	char *command;
-	command = strtok(inp, " ");
-	fprintf(stdout, "%s\n", command);
+	command = strtok(cmd, " ");
+	// fprintf(stdout, "%s\n", command);
 
     // Hint: do not return before receiving the command "Graduate"
     // please keep in mind that every process runs this exact same program, so think of all the possible cases and implement them
@@ -156,9 +158,25 @@ int main(int argc, char *argv[]) {
 		child = strtok(NULL, " ");
 		sscanf(child, "%s_%d", childName, &childVal);
 		// printf("%s\n%s\n", parent, child);
-		printf("%s %d\n", childName, childVal);
-		int32_t pipeArr[2];
-
+		// printf("%s %d\n", childName, childVal);
+		int32_t pipefd[2];
+		if(pipe(pipefd) < 0){
+			ERR_EXIT("Error create a pipe");
+		}
+		pid_t pid;
+		if((pid = fork()) == 0){ // child process
+			close(pipefd[0]);
+			dup2(pipefd[0], STDIN_FILENO);
+			close(pipefd[1]);
+			printf("%s\n", childName);
+			execl("./friend", "./friend", childName, NULL);
+			ERR_EXIT("Exec Failed");
+		}
+		else{ // parent process
+			close(pipefd[0]);
+			write(pipefd[1], cmd, sizeof(cmd));
+			waitpid(pid, NULL, 0);
+		}
 	}
 
     /* pseudo code
