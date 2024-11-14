@@ -103,10 +103,45 @@ void fully_read(int read_fd, void *read_buf, int read_len);
 please do above 2 functions to save some time
 */
 
+
+void fully_read(int read_fd, void *read_buf, int read_len){
+	int32_t readin = 0;
+	while(readin < read_len){
+		int32_t result = read(read_fd, (char *)read_buf + readin, read_len - readin);
+		if(result > 0){
+			readin += result;
+		}
+		else if(result == 0){
+			break;
+		}
+		else{
+			ERR_EXIT("Error to read");
+			break;
+		}
+	}
+}
+
+void fully_write(int write_fd, void *write_buf, int write_len){
+	int32_t written = 0;
+	while(written < write_len){
+		int32_t result = write(write_fd, (char *)write_buf + written, write_len - written);
+		if(result > 0){
+			written += result;
+		}
+		else if(result == 0){
+			break;
+		}
+		else{
+			ERR_EXIT("Error to write");
+			break;
+		}
+	}
+}
+
 int main(int argc, char *argv[]) {
     // Hi! Welcome to SP Homework 2, I hope you have fun
     pid_t process_pid = getpid(); // you might need this when using fork()
-	printf("Current process pid: %d\n", process_pid);
+	// printf("Current process pid: %d\n", process_pid);
     if(argc != 2){
         fprintf(stderr, "Usage: ./friend [friend_info]\n");
         return 0;
@@ -128,7 +163,11 @@ int main(int argc, char *argv[]) {
         // extract name and value from info
         // where do you read from?
         // anything else you have to do before you start taking commands?
-		printf("process id: %d\n", process_pid);
+		char outProcessID[128];
+		snprintf(outProcessID, 128, "process id: %d\n", process_pid);
+		// fully_write(STDOUT_FILENO, outProcessID, strlen(outProcessID));
+		sscanf(friend_info, "%[^_]_%d", friend_name, &friend_value);
+    	friend_name[MAX_FRIEND_NAME_LEN - 1] = '\0';
     }
 
     //TODO:
@@ -141,41 +180,54 @@ int main(int argc, char *argv[]) {
         4.1 command passing may be required here
     5. after previous command is done, repeat step 1.
     */
-	char cmd[MAX_CMD_LEN];
-	fscanf(stdin, "%[^\n]", cmd);
-	getchar();
-	char *command;
-	command = strtok(cmd, " ");
-	// fprintf(stdout, "%s\n", command);
+	while(true){
+		char cmd[MAX_CMD_LEN];
+	 	// printf("Now is read from: %d\n", process_pid);
+		fscanf(stdin, "%[^\n]", cmd);
+		getchar();
+		char *command;
+		command = strtok(cmd, " ");
+		// fprintf(stdout, "%s\n", command);
 
-    // Hint: do not return before receiving the command "Graduate"
-    // please keep in mind that every process runs this exact same program, so think of all the possible cases and implement them
-	if(strcmp(command, "Meet") == 0){
-		char *parent, *child;
-		int32_t childVal = 0;
-		char childName[128];
-		parent = strtok(NULL, " ");
-		child = strtok(NULL, " ");
-		sscanf(child, "%s_%d", childName, &childVal);
-		// printf("%s\n%s\n", parent, child);
-		// printf("%s %d\n", childName, childVal);
-		int32_t pipefd[2];
-		if(pipe(pipefd) < 0){
-			ERR_EXIT("Error create a pipe");
-		}
-		pid_t pid;
-		if((pid = fork()) == 0){ // child process
-			close(pipefd[0]);
-			dup2(pipefd[0], STDIN_FILENO);
-			close(pipefd[1]);
-			printf("%s\n", childName);
-			execl("./friend", "./friend", childName, NULL);
-			ERR_EXIT("Exec Failed");
-		}
-		else{ // parent process
-			close(pipefd[0]);
-			write(pipefd[1], cmd, sizeof(cmd));
-			waitpid(pid, NULL, 0);
+		// Hint: do not return before receiving the command "Graduate"
+		// please keep in mind that every process runs this exact same program, so think of all the possible cases and implement them
+		if(strcmp(command, "Meet") == 0){
+			char *parent, *child;
+			int32_t childVal = 0;
+			char childName[128];
+			parent = strtok(NULL, " ");
+			child = strtok(NULL, " ");
+			sscanf(child, "%[^_]_%d", childName, &childVal);
+			// printf("%s\n%s\n", parent, child);
+			// printf("%s %d\n", childName, childVal);
+			int32_t pipefdpw[2], pipefdcw[2];
+			if(pipe(pipefdpw) < 0){
+				ERR_EXIT("Error create a pipe");
+			}
+			if(pipe(pipefdcw) < 0){
+				ERR_EXIT("Error create a pipe");
+			}
+			pid_t pid;
+			if((pid = fork()) == 0){ // child process
+				close(pipefdpw[1]);
+				close(pipefdcw[0]);
+				dup2(pipefdpw[0], STDIN_FILENO);
+				dup2(pipefdcw[1], STDOUT_FILENO);
+				close(pipefdpw[0]);
+				close(pipefdcw[1]);
+				// printf("%s\n", childName);
+				execl("./friend", "./friend", childName, NULL);
+				ERR_EXIT("Exec Failed");
+			}
+			else{ // parent process
+				close(pipefdpw[0]);
+				close(pipefdcw[1]);
+				char fromChild[100];
+				read(pipefdcw[0], fromChild, 100);
+				printf("from child sent: %s\n", fromChild);
+				// write(pipefdpw[1], cmd, strlen(cmd));
+				waitpid(pid, NULL, 0);
+			}
 		}
 	}
 
