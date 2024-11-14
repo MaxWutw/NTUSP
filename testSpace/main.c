@@ -3,17 +3,17 @@
 #include <unistd.h>
 int glob = 6;
 int main(void){
-	int var;
-	pid_t pid;
-	var = 88;
-	if ((pid = vfork()) < 0) {
+    int var;
+    pid_t pid;
+    var = 88;
+    if ((pid = vfork()) < 0) {
         printf("vfork error");
         exit(-1);
-    } else if (pid == 0) { /* 子进程 */
+    } else if (pid == 0) {
         var++;
-		glob++;
-        return 0;
+        glob++;
+        _exit(0);
     }
     printf("pid=%d, glob=%d, var=%d\n", getpid(), glob, var);
-    return 0;
+    exit(0);
 }
