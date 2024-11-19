@@ -11,6 +11,7 @@
 #include <sys/types.h>
 
 #include "hw2.h"
+#include "utility.h"
 
 #define ERR_EXIT(s) perror(s), exit(errno);
 
@@ -140,6 +141,10 @@ void fully_write(int write_fd, void *write_buf, int write_len){
 
 int main(int argc, char *argv[]) {
     // Hi! Welcome to SP Homework 2, I hope you have fun
+	sList *pList = (sList *)malloc(1 * sizeof(sList));
+	initList(pList);
+	regFreeCallback(pList, myfree);
+	regPrintCallback(pList, myprint);
     pid_t process_pid = getpid(); // you might need this when using fork()
 	// printf("Current process pid: %d\n", process_pid);
     if(argc != 2){
@@ -164,6 +169,24 @@ int main(int argc, char *argv[]) {
         // where do you read from?
         // anything else you have to do before you start taking commands?
 		char outProcessID[128];
+		char cmd[MAX_CMD_LEN];
+		fscanf(stdin, "%[^\n]", cmd);
+		getchar();
+		// parse
+		char *command;
+		command = strtok(cmd, " ");
+		char *parent, *child;
+		int32_t childVal = 0;
+		char childName[128];
+		parent = strtok(NULL, " ");
+		child = strtok(NULL, " ");
+		sscanf(child, "%[^_]_%d", childName, &childVal);
+		strncpy(friend_name, childName, MAX_FRIEND_NAME_LEN);
+        friend_name[MAX_FRIEND_NAME_LEN - 1] = '\0';        // in case strcmp messes with you
+		read_fp = stdin;
+		friend_value = childVal;
+		printf("PID: %d, Name: %s, Value: %d\n", process_pid, childName, childVal);
+		//finish parse command
 		snprintf(outProcessID, 128, "process id: %d\n", process_pid);
 		// fully_write(STDOUT_FILENO, outProcessID, strlen(outProcessID));
 		sscanf(friend_info, "%[^_]_%d", friend_name, &friend_value);
@@ -181,10 +204,11 @@ int main(int argc, char *argv[]) {
     5. after previous command is done, repeat step 1.
     */
 	while(true){
-		char cmd[MAX_CMD_LEN];
-	 	// printf("Now is read from: %d\n", process_pid);
+		char cmd[MAX_CMD_LEN], toChildCmd[MAX_CMD_LEN];
+	 	printf("Now is read from: %d\n", process_pid);
 		fscanf(stdin, "%[^\n]", cmd);
 		getchar();
+		strcpy(toChildCmd, cmd);
 		char *command;
 		command = strtok(cmd, " ");
 		// fprintf(stdout, "%s\n", command);
@@ -198,6 +222,9 @@ int main(int argc, char *argv[]) {
 			parent = strtok(NULL, " ");
 			child = strtok(NULL, " ");
 			sscanf(child, "%[^_]_%d", childName, &childVal);
+			// if(strcmp(parent, friend_name) != 0){
+
+			// }
 			// printf("%s\n%s\n", parent, child);
 			// printf("%s %d\n", childName, childVal);
 			int32_t pipefdpw[2], pipefdcw[2];
@@ -223,10 +250,42 @@ int main(int argc, char *argv[]) {
 				close(pipefdpw[0]);
 				close(pipefdcw[1]);
 				char fromChild[100];
+				if(pList->pParam->size == 0){
+					sNode *newNode = (sNode *)malloc(1 * sizeof(sNode));
+					newNode->next = NULL;
+					newNode->prev = NULL;
+
+					friend *newFriend = (friend *)malloc(1 * sizeof(friend));
+					newFriend->pid = pid;
+					strcpy(newFriend->name, childName);
+					newFriend->value = childVal;
+					newNode->data = (void *)newFriend;
+
+					pList->pHead->next = newNode;
+					pList->pTail->prev = newNode;
+				}
+				else{
+					sNode *newNode = (sNode *)malloc(1 * sizeof(sNode));
+					newNode->next = NULL;
+					newNode->prev = NULL;
+
+					friend *newFriend = (friend *)malloc(1 * sizeof(friend));
+					newFriend->pid = pid;
+					strcpy(newFriend->name, childName);
+					newFriend->value = childVal;
+					newNode->data = (void *)newFriend;
+
+					pList->pTail->prev->next = newNode;
+					pList->pTail->prev = newNode;
+				}
+				int32_t leng = strlen(toChildCmd);
+				toChildCmd[leng] = '\n';
+				leng++;
+				toChildCmd[leng] = '\0';
+				write(pipefdpw[1], toChildCmd, leng);
 				read(pipefdcw[0], fromChild, 100);
 				printf("from child sent: %s\n", fromChild);
-				// write(pipefdpw[1], cmd, strlen(cmd));
-				waitpid(pid, NULL, 0);
+				// waitpid(pid, NULL, 0);
 			}
 		}
 	}
