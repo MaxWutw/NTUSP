@@ -185,7 +185,7 @@ int main(int argc, char *argv[]) {
         friend_name[MAX_FRIEND_NAME_LEN - 1] = '\0';        // in case strcmp messes with you
 		read_fp = stdin;
 		friend_value = childVal;
-		printf("PID: %d, Name: %s, Value: %d\n", process_pid, childName, childVal);
+		// printf("PID: %d, Name: %s, Value: %d\n", process_pid, childName, childVal);
 		//finish parse command
 		snprintf(outProcessID, 128, "process id: %d\n", process_pid);
 		// fully_write(STDOUT_FILENO, outProcessID, strlen(outProcessID));
@@ -205,10 +205,14 @@ int main(int argc, char *argv[]) {
     */
 	while(true){
 		char cmd[MAX_CMD_LEN], toChildCmd[MAX_CMD_LEN];
-	 	printf("Now is read from: %d\n", process_pid);
+	 	// printf("Now is read from: %d\n", process_pid);
 		fscanf(stdin, "%[^\n]", cmd);
 		getchar();
 		strcpy(toChildCmd, cmd);
+		int32_t leng = strlen(toChildCmd);
+		toChildCmd[leng] = '\n';
+		leng++;
+		toChildCmd[leng] = '\0';
 		char *command;
 		command = strtok(cmd, " ");
 		// fprintf(stdout, "%s\n", command);
@@ -222,9 +226,31 @@ int main(int argc, char *argv[]) {
 			parent = strtok(NULL, " ");
 			child = strtok(NULL, " ");
 			sscanf(child, "%[^_]_%d", childName, &childVal);
-			// if(strcmp(parent, friend_name) != 0){
-
-			// }
+			int8_t isMeet = 0;
+			if(strcmp(parent, friend_name) != 0){
+				sNode *pNode = pList->pHead->next;
+				char middle[MAX_FRIEND_NAME_LEN] = {'\0'};
+				while(pNode != NULL){
+					friend *newFriend = (friend *)pNode->data;
+					fully_write(newFriend->write_fd, toChildCmd, leng);
+					read(newFriend->read_fd, middle, MAX_FRIEND_NAME_LEN);
+					printf("%s\n", middle);
+					if(middle[0] != '\0'){
+						isMeet = 1;
+						break;
+					}
+					pNode = pNode->next;
+				}
+				if(isMeet){
+					// fprintf(stdout, "Not_Tako has met %s through %s\n", middle, child);
+					print_indirect_meet(middle, childName);
+					continue;
+				}
+				else{
+					print_fail_meet(parent, childName);
+					continue;
+				}
+			}
 			// printf("%s\n%s\n", parent, child);
 			// printf("%s %d\n", childName, childVal);
 			int32_t pipefdpw[2], pipefdcw[2];
@@ -259,6 +285,8 @@ int main(int argc, char *argv[]) {
 					newFriend->pid = pid;
 					strcpy(newFriend->name, childName);
 					newFriend->value = childVal;
+					newFriend->read_fd = pipefdcw[0];
+					newFriend->write_fd = pipefdpw[1];
 					newNode->data = (void *)newFriend;
 
 					pList->pHead->next = newNode;
@@ -273,18 +301,23 @@ int main(int argc, char *argv[]) {
 					newFriend->pid = pid;
 					strcpy(newFriend->name, childName);
 					newFriend->value = childVal;
+					newFriend->read_fd = pipefdcw[0];
+					newFriend->write_fd = pipefdpw[1];
 					newNode->data = (void *)newFriend;
 
 					pList->pTail->prev->next = newNode;
 					pList->pTail->prev = newNode;
 				}
-				int32_t leng = strlen(toChildCmd);
-				toChildCmd[leng] = '\n';
-				leng++;
-				toChildCmd[leng] = '\0';
-				write(pipefdpw[1], toChildCmd, leng);
-				read(pipefdcw[0], fromChild, 100);
-				printf("from child sent: %s\n", fromChild);
+				// write(pipefdpw[1], toChildCmd, leng);
+				// read(pipefdcw[0], fromChild, 100);
+				fully_write(pipefdpw[1], toChildCmd, leng);
+				// read(pipefdcw[0], fromChild, 100);
+				if(strcmp(friend_name, "Not_Tako") != 0){
+					printf("%s", friend_name);
+					continue;
+				}
+				// else printf("from child sent: %s\n", fromChild);
+				print_direct_meet(child);
 				// waitpid(pid, NULL, 0);
 			}
 		}
