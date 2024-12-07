@@ -142,6 +142,7 @@ void fully_write(int write_fd, void *write_buf, int write_len){
 int main(int argc, char *argv[]) {
     // Hi! Welcome to SP Homework 2, I hope you have fun
 	sList *pList = (sList *)malloc(1 * sizeof(sList));
+	int32_t output_fd = open("output.out", O_WRONLY | O_APPEND);
 	initList(pList);
 	regFreeCallback(pList, myfree);
 	regPrintCallback(pList, myprint);
@@ -204,10 +205,11 @@ int main(int argc, char *argv[]) {
     5. after previous command is done, repeat step 1.
     */
 	while(true){
-		char cmd[MAX_CMD_LEN], toChildCmd[MAX_CMD_LEN];
+		char cmd[MAX_CMD_LEN] = {'\0'}, toChildCmd[MAX_CMD_LEN] = {'\0'};
 	 	// printf("Now is read from: %d\n", process_pid);
 		fscanf(stdin, "%[^\n]", cmd);
 		getchar();
+		if(strcmp(cmd, "\0") == 0) continue;
 		strcpy(toChildCmd, cmd);
 		int32_t leng = strlen(toChildCmd);
 		toChildCmd[leng] = '\n';
@@ -222,7 +224,7 @@ int main(int argc, char *argv[]) {
 		if(strcmp(command, "Meet") == 0){
 			char *parent, *child;
 			int32_t childVal = 0;
-			char childName[128];
+			char childName[128] = {'\0'};
 			parent = strtok(NULL, " ");
 			child = strtok(NULL, " ");
 			sscanf(child, "%[^_]_%d", childName, &childVal);
@@ -231,22 +233,41 @@ int main(int argc, char *argv[]) {
 				sNode *pNode = pList->pHead->next;
 				char middle[MAX_FRIEND_NAME_LEN] = {'\0'};
 				while(pNode != NULL){
+					// printf("%s\n", friend_name);
 					friend *newFriend = (friend *)pNode->data;
 					fully_write(newFriend->write_fd, toChildCmd, leng);
 					read(newFriend->read_fd, middle, MAX_FRIEND_NAME_LEN);
-					printf("%s\n", middle);
-					if(middle[0] != '\0'){
+					// printf("%s\n", middle);
+					if(strcmp(friend_name, "Not_Tako") != 0){
+						printf("%s", middle);
+					}
+					if(middle[0] != '-'){
 						isMeet = 1;
 						break;
 					}
 					pNode = pNode->next;
 				}
+				// char writeOut[256];
+				// snprintf(writeOut, 256, "newFriend: %s, pid: %d\n", friend_name, 10);
+				// write(output_fd, writeOut, 256);
 				if(isMeet){
 					// fprintf(stdout, "Not_Tako has met %s through %s\n", middle, child);
-					print_indirect_meet(middle, childName);
+					// char writeOut[256];
+					// snprintf(writeOut, 256, "current pid: %d -> %s -> parent: %s -> middle: %s\n", getpid(), friend_name, parent, middle);
+					// write(output_fd, writeOut, 256);
+					if(strcmp(friend_name, "Not_Tako") == 0) print_indirect_meet(middle, childName);
 					continue;
 				}
 				else{
+					// char writeOut[256];
+					// snprintf(writeOut, 256, "name: %s\n", friend_name);
+					// write(output_fd, writeOut, 256);
+					if(strcmp(friend_name, "Not_Tako") != 0){
+						fprintf(stdout, "%s", "-");
+						continue;
+					}
+					// snprintf(writeOut, 256, "current pid: %d -> %s -> parent: %s -> middle: %s\n", getpid(), friend_name, parent, middle);
+					// write(output_fd, writeOut, 256);
 					print_fail_meet(parent, childName);
 					continue;
 				}
@@ -291,6 +312,8 @@ int main(int argc, char *argv[]) {
 
 					pList->pHead->next = newNode;
 					pList->pTail->prev = newNode;
+
+					pList->pParam->size += 1;
 				}
 				else{
 					sNode *newNode = (sNode *)malloc(1 * sizeof(sNode));
@@ -307,6 +330,8 @@ int main(int argc, char *argv[]) {
 
 					pList->pTail->prev->next = newNode;
 					pList->pTail->prev = newNode;
+
+					pList->pParam->size += 1;
 				}
 				// write(pipefdpw[1], toChildCmd, leng);
 				// read(pipefdcw[0], fromChild, 100);
@@ -317,8 +342,31 @@ int main(int argc, char *argv[]) {
 					continue;
 				}
 				// else printf("from child sent: %s\n", fromChild);
-				print_direct_meet(child);
+				print_direct_meet(childName);
 				// waitpid(pid, NULL, 0);
+			}
+		}
+		else if(strcmp(command, "Check") == 0){
+			char *parent;
+			parent = strtok(NULL, " ");
+			if(strcmp(friend_name, parent) != 0){
+				sNode *pNode = pList->pHead->next;
+				char child[MAX_FRIEND_NAME_LEN] = {'\0'};
+				while(pNode != NULL){
+					friend *newFriend = (friend *)pNode->data;
+					fully_write(newFriend->write_fd, toChildCmd, leng);
+					read(newFriend->read-fd, child, MAX_FRIEND_NAME_LEN);
+					if(strcmp(friend_name, "Not_Tako") != 0){
+						fprintf(stdout, "%s", child);
+					}
+					if(child[0] == '-'){
+						
+					}
+				}
+			}
+			else if(strcmp(friend_name, parent) == 0){
+				sNode *pNode = pList->pHead->next;
+				fprintf(stdout, "%s", child);
 			}
 		}
 	}
