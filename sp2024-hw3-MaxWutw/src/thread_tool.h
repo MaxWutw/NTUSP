@@ -38,7 +38,7 @@ struct tcb_queue {
 };
 
 extern struct tcb_queue ready_queue, waiting_queue;
-extern struct tcb_queue sleeping_set;
+extern struct tcb *sleeping_set[THREAD_MAX + 1];
 
 // The rwlock structure.
 //
@@ -145,22 +145,25 @@ extern int first_time;
 
 #define read_unlock()                                                                 \
     ({                                                                                \
-	 if(rwlock.read_lock > 0) rwlock.read_lock--;\
+	 if(rwlock.read_count > 0) rwlock.read_count--;\
     })
 
 #define write_unlock()                                                                \
     ({                                                                                \
-	 if(rwlock.write_lock == 1) rwlock.write_lock = 0;\
+	 if(rwlock.write_count == 1) rwlock.write_count = 0;\
     })
 
 #define thread_sleep(sec)                                            \
     ({                                                               \
-	 int head = sleeping.head;\
-	 sleeping_set.arr[head]->sleeping_time = sec;\
+	 sleeping_set[current_thread->id] = (struct tcb *)malloc(1 * sizeof(struct tcb));\
+	 sleeping_set[current_thread->id] = current_thread;\
     })
 
 #define thread_awake(t_id)                                                        \
     ({                                                                            \
+	 ready_queue.arr[ready_queue.size] = sleeping_set[t_id];\
+	 ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;\
+	 free(sleeping_set[t_id]);\
     })
 
 #define thread_exit()                                    \

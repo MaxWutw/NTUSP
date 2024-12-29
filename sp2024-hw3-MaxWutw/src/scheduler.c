@@ -7,7 +7,7 @@
 #include "routine.h"
 #include "thread_tool.h"
 
-struct tcb_queue sleeping_set;
+struct tcb *sleeping_set[THREAD_MAX + 1];
 // TODO::
 // Prints out the signal you received.
 // This function should not return. Instead, jumps to the scheduler.
@@ -47,22 +47,20 @@ void scheduler() {
 	sigaction(SIGTSTP, &sa_tstp, NULL);
 	sigaction(SIGALRM, &sa_alrm, NULL);
 
-	// for(int i = 0;i <= sleeping_set.size;i++){
-	// 	struct tcb *tcb = sleeping_set.arr[i];
-	// 	tcb->sleeping_time -= time_slice;
-	// 	if(tcb->sleeping_time <= 0){
-	// 		ready_queue.head++;
-	// 		ready_queue.arr[ready_queue.head] = tcb;
-	// 		for(int j = i + 1;j <= sleeping_set.size;j++){
-	// 			sleeping_set[j - 1] = sleeping_set[j];
-	// 		}
-	// 		sleeping_set.size--;
-	// 	}
-	// }
+	for(int i = 0;i < THREAD_MAX;i++){
+		struct tcb *tcb = sleeping_set[i];
+		if(tcb == NULL) continue;
+		tcb->sleeping_time -= time_slice;
+		if(tcb->sleeping_time <= 0){
+			ready_queue.arr[ready_queue.size] = tcb;
+			ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;
+			free(tcb);
+		}
+	}
 
-	// for(int i = 0;i < waiting_queue.size;i++){
+	for(int i = 0;i < waiting_queue.size;i++){
 
-	// }
+	}
 
 	if(status == 1){ // from sighandler
 		if(current_thread->id != 0){
@@ -86,8 +84,13 @@ void scheduler() {
 
 	}
 	if(ready_queue.head == ready_queue.size){
-		int judge = 1;
-		if(sleeping_set.head == sleeping_set.size) judge = 0;
+		int judge = 0;
+		for(int i = 0;i < THREAD_MAX;i++){
+			if(sleeping_set[i] != NULL){
+				judge = 1;
+				break;
+			}
+		}
 		if(judge){
 			current_thread = idle_thread;
 		}
