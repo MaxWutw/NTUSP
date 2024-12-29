@@ -10,11 +10,11 @@
 
 struct tcb *current_thread, *idle_thread;
 struct tcb_queue ready_queue, waiting_queue;
-struct tcb *sleeping_set[THREAD_MAX];
 struct rwlock rwlock;
 int q_p, q_s;
 int time_slice;
 jmp_buf sched_buf;
+int first_time = 1;
 
 // Prints `msg`, the error message from `errno`, and exits the program with status 1.
 void perror_exit(const char *msg) {
@@ -111,6 +111,7 @@ void spawn_thread(int argc, char *argv[]) {
 }
 
 void start_threading() {
+	// fprintf(stdout, "start Threading\n");
     scheduler();
 }
 
