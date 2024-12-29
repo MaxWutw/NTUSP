@@ -92,6 +92,7 @@ void scheduler() {
 			current_thread = idle_thread;
 		}
 		else{
+			current_thread = idle_thread;
 			free(current_thread);
 			return;
 		}

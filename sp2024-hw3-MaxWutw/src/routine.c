@@ -51,8 +51,8 @@ void pm(int id, int *args) {
 			current_thread->f_prev = 1;
 		}
 		else{
-			int f_next = ((current_thread->i & 1 ? 1 : -1) * current_thread->i) + current_thread->f_prev;
 			current_thread->f_prev = current_thread->f_cur;
+			int f_next = ((current_thread->i & 1 ? 1 : -1) * current_thread->i) + current_thread->f_prev;
 			current_thread->f_cur = f_next;
 		}
         printf("thread %d: pm(%d) = %d\n", current_thread->id, current_thread->i,
