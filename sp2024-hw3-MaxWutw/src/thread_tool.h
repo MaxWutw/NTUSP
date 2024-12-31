@@ -25,6 +25,7 @@ struct tcb {
     int sleeping_time;
     jmp_buf env;  // Where the scheduler should jump to.
     int n, i, f_cur, f_prev; // TODO: Add some variables you wish to keep between switches.
+	int keepgo;
 };
 
 // The only one thread in the RUNNING state.
@@ -79,6 +80,7 @@ extern int first_time;
 	 new_tcb->i = 0;\
 	 new_tcb->f_cur = 0;\
 	 new_tcb->f_prev = 0;\
+	 new_tcb->keepgo = 0;\
 	 if(strcmp(__func__, "idle") == 0){\
 	 	idle_thread = new_tcb;\
 		if(setjmp(idle_thread->env) == 0)\
@@ -121,8 +123,10 @@ extern int first_time;
     ({                                                                   \
 	 if(rwlock.write_count != 0){\
 		 if(setjmp(current_thread->env) == 0){\
+		 	current_thread->waiting_for = 4;\
 		 	waiting_queue.arr[waiting_queue.size] = current_thread;\
 			waiting_queue.size = (waiting_queue.size + 1) % THREAD_MAX;\
+			longjmp(sched_buf, 4);\
 		 }\
 	 }\
 	 else{\
@@ -134,8 +138,10 @@ extern int first_time;
     ({                                                                   \
 	 if(rwlock.write_count != 0 || rwlock.read_count != 0){\
 		 if(setjmp(current_thread->env) == 0){\
+		 	current_thread->waiting_for = 5;\
 		 	waiting_queue.arr[waiting_queue.size] = current_thread;\
 			waiting_queue.size = (waiting_queue.size + 1) % THREAD_MAX;\
+			longjmp(sched_buf, 5);\
 		 }\
 	 }\
 	 else{\
@@ -156,14 +162,19 @@ extern int first_time;
 #define thread_sleep(sec)                                            \
     ({                                                               \
 	 sleeping_set[current_thread->id] = (struct tcb *)malloc(1 * sizeof(struct tcb));\
+	 current_thread->sleeping_time = sec;\
 	 sleeping_set[current_thread->id] = current_thread;\
+	 longjmp(sched_buf, 2);\
     })
 
 #define thread_awake(t_id)                                                        \
     ({                                                                            \
-	 ready_queue.arr[ready_queue.size] = sleeping_set[t_id];\
-	 ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;\
-	 free(sleeping_set[t_id]);\
+	 if(sleeping_set[t_id] != NULL){\
+		 sleeping_set[t_id]->keepgo = 1;\
+		 ready_queue.arr[ready_queue.size] = sleeping_set[t_id];\
+		 ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;\
+		 sleeping_set[t_id] = NULL;\
+	 }\
     })
 
 #define thread_exit()                                    \

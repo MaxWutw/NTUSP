@@ -10,8 +10,11 @@ void idle(int id, int *args) {
     // TODO:: IDLE ^-^
 	thread_setup(id, args);
 
-	sleep(1);
-	thread_yield();
+	while(1){
+		fprintf(stdout, "thread %d: idle\n", current_thread->id);
+		sleep(1);
+		thread_yield();
+	}
 }
 
 void fibonacci(int id, int *args) {
@@ -73,54 +76,37 @@ void enroll(int id, int *args) {
     // TODO:: enroll !! -^-
 	thread_setup(id, args);
 	
-	int dp = current_thread->args[0];
-	int ds = current_thread->args[1];
-	int s = current_thread->args[2];
-	int b = current_thread->args[3];
 
-	fprintf(stdout, "thread %d: sleep %d\n", current_thread->id, s);
-	thread_sleep(s);
+	int s = current_thread->args[2];
+	if(!current_thread->keepgo){
+		fprintf(stdout, "thread %d: sleep %d\n", current_thread->id, s);
+		thread_sleep(s + time_slice);
+	}
+	int b = current_thread->args[3];
 	thread_awake(b);
+	// printf("current id: %d, the dp is: %d, the q_p is: %d\n", current_thread->id, dp, q_p);
 
 	read_lock();
 	fprintf(stdout, "thread %d: acquire read lock\n", current_thread->id);
 	sleep(1);
-	if(current_thread->i == current_thread->n){
-		thread_exit();
-	}
-	else{
-		thread_yield();
-	}
+	thread_yield();
 
 	read_unlock();
+	int dp = current_thread->args[0];
+	int ds = current_thread->args[1];
 	int pp = dp * q_p, ps = ds * q_s;
 	fprintf(stdout, "thread %d: release read lock, p_p = %d, p_s = %d\n", current_thread->id, pp, ps);
 	sleep(1);
-	if(current_thread->i == current_thread->n){
-		thread_exit();
-	}
-	else{
-		thread_yield();
-	}
+	thread_yield();
 
 	write_lock();
 	fprintf(stdout, "thread %d: acquire write lock, enroll in %s\n", current_thread->id, (pp > ps ? "pj_class" : "sw_class"));
 	sleep(1);
-	if(current_thread->i == current_thread->n){
-		thread_exit();
-	}
-	else{
-		thread_yield();
-	}
+	thread_yield();
 
 	write_unlock();
 	fprintf(stdout, "thread %d: release write lock\n", current_thread->id);
 	sleep(1);
-	if(current_thread->i == current_thread->n){
-		thread_exit();
-	}
-	else{
-		thread_yield();
-	}
+	thread_exit();
 }
 

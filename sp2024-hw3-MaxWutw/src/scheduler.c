@@ -50,16 +50,35 @@ void scheduler() {
 	for(int i = 0;i < THREAD_MAX;i++){
 		struct tcb *tcb = sleeping_set[i];
 		if(tcb == NULL) continue;
+		// printf("In sleeping set: %d\n", tcb->id);
 		tcb->sleeping_time -= time_slice;
+		// printf("id: %d, sleeping: %d\n", tcb->id, tcb->sleeping_time);
 		if(tcb->sleeping_time <= 0){
+			// printf("sleeping_time to ready: %d\n", tcb->id);
 			ready_queue.arr[ready_queue.size] = tcb;
 			ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;
-			free(tcb);
+			tcb->keepgo = 1;
+			// printf("free: %d\n", tcb->id);
+			sleeping_set[i] = NULL;
 		}
 	}
 
-	for(int i = 0;i < waiting_queue.size;i++){
-
+	for(int i = waiting_queue.head;i < waiting_queue.size;i++){
+		struct tcb *tcb = waiting_queue.arr[i];
+		if(tcb->waiting_for == 4){
+			if(rwlock.write_count == 0){
+				ready_queue.arr[ready_queue.size] = tcb;
+				ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;
+				waiting_queue.head = (waiting_queue.head + 1) % THREAD_MAX;
+			}
+		}
+		else if(tcb->waiting_for == 5){
+			if(rwlock.write_count == 0 && rwlock.read_count == 0){
+				ready_queue.arr[ready_queue.size] = tcb;
+				ready_queue.size = (ready_queue.size + 1) % THREAD_MAX;
+				waiting_queue.head = (waiting_queue.head + 1) % THREAD_MAX;
+			}
+		}
 	}
 
 	if(status == 1){ // from sighandler
@@ -81,7 +100,7 @@ void scheduler() {
 		
 	}
 	else{
-
+		// pass
 	}
 	if(ready_queue.head == ready_queue.size){
 		int judge = 0;
@@ -101,8 +120,25 @@ void scheduler() {
 		}
 	}
 	else{
-		current_thread = ready_queue.arr[ready_queue.head];
-		ready_queue.head = (ready_queue.head + 1) % THREAD_MAX;
+		while(ready_queue.head != ready_queue.size){
+			int leave = 1;
+			for(int i = 0;i < THREAD_MAX;i++){
+				if(sleeping_set[i] != NULL && sleeping_set[i]->id == ready_queue.arr[ready_queue.head]->id){
+					ready_queue.head = (ready_queue.head + 1) % THREAD_MAX;
+					leave = 0;
+					break;
+				}
+			}
+			if(leave) break;
+		}
+		if(ready_queue.head == ready_queue.size){
+			current_thread = idle_thread;
+		}
+		else{
+			current_thread = ready_queue.arr[ready_queue.head];
+			ready_queue.head = (ready_queue.head + 1) % THREAD_MAX;
+		}
 	}
+	// printf("current id: %d\n", current_thread->id);
 	longjmp(current_thread->env, 1);
 }
