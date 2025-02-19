@@ -1,74 +1,65 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
+#include <stdint.h>
 #include <unistd.h>
-#include <termios.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <fcntl.h>
-#include <sys/select.h>
+#include <pthread.h>
+#define MAX_COUNT 3 
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+int32_t buffer[MAX_COUNT];
+int32_t cnt = 0;
+void *server(void *arg){
+	for(int32_t i = 0;i < 3;i++){
+		pthread_mutex_lock(&mutex);
 
-// 設置信號處理器
-void handle_signal(int sig) {
-    printf("\nReceived signal %d. Exiting...\n", sig);
-    exit(0);
+		while(cnt == MAX_COUNT){
+			pthread_cond_wait(&cond, &mutex);
+			printf("server wait\n");
+			usleep(1000);
+		}
+
+		buffer[cnt++] = i;
+		printf("Produced %d\n", i);
+
+		pthread_cond_signal(&cond);
+		pthread_mutex_unlock(&mutex);
+		usleep(100000);
+	}
+	printf("server out\n");
+	return NULL;
 }
 
-// 設置終端為非阻塞模式
-void set_non_blocking_terminal() {
-    struct termios t;
-    tcgetattr(STDIN_FILENO, &t);
-    t.c_lflag &= ~ICANON;  // 禁用規範模式
-    t.c_lflag &= ~ECHO;    // 禁用回顯
-    t.c_cc[VMIN] = 1;      // 最少讀取 1 字符
-    t.c_cc[VTIME] = 0;     // 不設超時
-    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+void *client(void *arg){
+	for(int32_t i = 0;i < 3;i++){
+		pthread_mutex_lock(&mutex);
+
+		while(cnt == 0){
+			pthread_cond_wait(&cond, &mutex);
+			printf("client wait\n");
+			usleep(1000);
+		}
+		int32_t item = buffer[--cnt];
+		printf("Consumed: %d\n", item);
+		pthread_cond_signal(&cond);
+		pthread_mutex_unlock(&mutex);
+	}
+	printf("client out\n");
+	return NULL;
 }
+int main(){
+	pthread_t cli, ser;
+	pthread_create(&ser, NULL, server, NULL);
+	pthread_create(&cli, NULL, client, NULL);
 
-// 讀取一個字符並檢查是否是 Esc
-int read_char() {
-    unsigned char ch;
-    if (read(STDIN_FILENO, &ch, 1) == 1) {
-        return ch;
-    }
-    return -1;
-}
+	pthread_join(cli, NULL);
+	pthread_join(ser, NULL);
 
-int main() {
-    // 設置信號處理器
-    signal(SIGINT, handle_signal);  // 可以使用 SIGINT 或自定義信號
-    set_non_blocking_terminal();   // 設置非阻塞模式
+	pthread_mutex_destroy(&mutex);
+	pthread_cond_destroy(&cond);
 
-    fd_set read_fds;
-    struct timeval timeout;
-
-    printf("Press 'Esc' to terminate the program...\n");
-
-    while (1) {
-        FD_ZERO(&read_fds);
-        FD_SET(STDIN_FILENO, &read_fds);
-
-        // 設定 1 秒的超時，這樣 select 可以每秒檢查一次
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
-
-        // 使用 select 等待輸入或超時
-        int ret = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &timeout);
-
-        if (ret > 0 && FD_ISSET(STDIN_FILENO, &read_fds)) {
-            int ch = read_char();
-            if (ch == 27) {  // Esc 鍵的 ASCII 值是 27
-                raise(SIGINT);  // 發送 SIGINT 信號
-            } else {
-                // 正常的資料輸入
-                printf("You entered: ");
-                char input[100];
-                scanf("%99[^\n]", input);  // 讀取一行文字
-                printf("Input received: %s\n", input);
-            }
-        } else {
-            // 如果沒有按鍵被按下，可以繼續其他操作
-            continue;
-        }
-    }
-
-    return 0;
+	return 0;
 }
