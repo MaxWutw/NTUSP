@@ -3,7 +3,7 @@
 #include <pthread.h>
 
 void *worker_thread(void *arg){
-	tpool_t *pool = (tpoll_t*)arg;
+	tpool_t *pool = (tpool_t*)arg;
 	while(1){
 		pthread_mutex_lock(&pool->lock);
 		while(pool->queue_size == 0 && !pool->terminate){
@@ -28,8 +28,8 @@ void *worker_thread(void *arg){
 struct tpool *tpool_init(int num_threads, int n) {
 	tpool_t *pool = (tpool_t *)malloc(sizeof(tpool_t));
 	pool->num_threads = num_threads;
-	pthread_mutex_init(pool->lock, NULL);
-	pthread_cond_init(pool->cond, NULL);
+	pthread_mutex_init(&pool->lock, NULL);
+	pthread_cond_init(&pool->cond, NULL);
 	pool->n = n;
 	pool->rear = 0;
 	pool->front = 0;
@@ -56,22 +56,22 @@ void tpool_request(struct tpool *pool, Matrix a, Matrix b, Matrix c,
 	int32_t work_size = total / num_works;
 	int32_t remainder = total % num_works;
 	int32_t start = 0;
-	for(int32_t i = 0;i < num_work;i++){
+	for(int32_t i = 0;i < num_works;i++){
 		int32_t end = start + work_size + (i < remainder ? 1 : 0);
 		work_t *work = (work_t *)malloc(sizeof(work_t));
 		work->start = start;
 		work->end = end;
 		work->a = a;
-		work->b = transpoase_b;
+		work->b = transpose_b;
 		work->c = c;
 		work->n = pool->n;
 
-		pthread_mutex_lock(pool->lock);
+		pthread_mutex_lock(&pool->lock);
 		pool->work_queue[pool->rear] = work;
 		pool->rear = (pool->rear + 1) % MAX_QUEUE_SIZE;
 		pool->queue_size++;
-		pthread_cond_signal(pool->cond);
-		pthread_mutex_unlock(pool->lock);
+		pthread_cond_signal(&pool->cond);
+		pthread_mutex_unlock(&pool->lock);
 
 		start = end;
 	}
@@ -86,16 +86,16 @@ void tpool_synchronize(struct tpool *pool) {
 }
 
 void tpool_destroy(struct tpool *pool) {
-	pthread_mutex_lock(pool->lock);
+	pthread_mutex_lock(&pool->lock);
 	pool->terminate = 1;
 	pthread_cond_broadcast(&pool->cond);
-	pthread_mutex_unlock(pool->unlock);
+	pthread_mutex_unlock(&pool->lock);
 
 	for(int32_t i = 0;i <= pool->num_threads;i++){
 		pthread_join(pool->backend_threads[i], NULL);
 	}
 	free(pool->backend_threads);
-	pthread_mutex_destroy(pool->lock);	
-	pthread_cond_destroy(pool->cond);
+	pthread_mutex_destroy(&pool->lock);	
+	pthread_cond_destroy(&pool->cond);
 	free(pool);
 }

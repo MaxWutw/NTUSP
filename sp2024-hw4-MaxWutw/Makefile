@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -pedantic -Wall -Wextra -pthread -std=gnu23 -O2
+CFLAGS = -pedantic -Wall -Wextra -pthread -std=gnu2x -O2
 LDFLAGS = -pthread
 TARGET = hw4
 SRCS = main.c tpool.c

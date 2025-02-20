@@ -1,13 +1,19 @@
 #pragma once
 
 #include <pthread.h>
+#include <stdlib.h>
+#include <stdint.h>
 #define MAX_QUEUE_SIZE 100
 
 /* You may define additional structures / typedef's in this header file if
  * needed.
  */
+
+typedef int** Matrix;
+typedef int* Vector;
+
 typedef struct{
-	Martrix a, b, c;
+	Matrix a, b, c;
 	int32_t start, end, n;
 }work_t;
 
@@ -16,10 +22,10 @@ typedef struct tpool {
 	pthread_mutex_t lock;
 	pthread_cond_t cond;
 
-	pthread_t frontend;
-	pthread_t *backend;
+	pthread_t frontend_thread;
+	pthread_t *backend_threads;
 
-	work_t work_queue[MAX_QUEUE_SIZE];
+	work_t *work_queue[MAX_QUEUE_SIZE];
 
 	int32_t num_threads;
 	int32_t queue_size;
@@ -27,9 +33,6 @@ typedef struct tpool {
 	int32_t n;
 	int8_t terminate;
 }tpool_t;
-
-typedef int** Matrix;
-typedef int* Vector;
 
 struct tpool* tpool_init(int num_threads, int n);
 void tpool_request(struct tpool*, Matrix a, Matrix b, Matrix c, int num_works);

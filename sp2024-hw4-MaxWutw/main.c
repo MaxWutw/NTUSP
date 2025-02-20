@@ -24,7 +24,7 @@ int main([[maybe_unused]] int argc, char *argv[]) {
     error_exit("invalid range of num_threads, n or t");
 
   Matrix a[t], b[t], c[t];
-  auto pool = tpool_init(num_threads, n);
+  struct tpool *pool = tpool_init(num_threads, n);
 
   for (int i = 0; i < t; i++) {
     a[i] = calloc(n, sizeof(Vector));
