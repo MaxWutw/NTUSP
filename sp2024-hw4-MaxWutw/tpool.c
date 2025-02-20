@@ -1,6 +1,8 @@
 #include "tpool.h"
 
 #include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
 
 void *worker_thread(void *arg){
 	tpool_t *pool = (tpool_t*)arg;
@@ -9,8 +11,11 @@ void *worker_thread(void *arg){
 		while(pool->queue_size == 0 && !pool->terminate){
 			pthread_cond_wait(&pool->cond, &pool->lock);
 		}
+		if(pool->terminate && pool->queue_size == 0){
+			pthread_mutex_unlock(&pool->lock);
+			break;
+		}
 		work_t *work = pool->work_queue[pool->front];
-		pthread_mutex_lock(&pool->lock);
 		pool->front = (pool->front + 1) % MAX_QUEUE_SIZE;
 		pool->queue_size--;
 		pthread_mutex_unlock(&pool->lock);
@@ -21,6 +26,13 @@ void *worker_thread(void *arg){
 			work->c[row][col] = calculation(work->n, work->a[row], work->b[col]);
 		}
 		free(work);
+
+		pthread_mutex_lock(&pool->lock);
+		pool->completed++;
+		if(pool->completed >= pool->total_works){
+			pthread_cond_signal(&pool->cond);
+		}
+		pthread_mutex_unlock(&pool->lock);
 	}
 	return NULL;
 }
@@ -35,8 +47,10 @@ struct tpool *tpool_init(int num_threads, int n) {
 	pool->front = 0;
 	pool->queue_size = 0;
 	pool->terminate = 0;
+	pool->total_works = 0;
+	pool->completed = 0;
 	pool->backend_threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
-	for(int32_t i = 0;i <= num_threads;i++){
+	for(int32_t i = 0;i < num_threads;i++){
 		pthread_create(&pool->backend_threads[i], NULL, worker_thread, pool);
 	}
 
@@ -56,6 +70,11 @@ void tpool_request(struct tpool *pool, Matrix a, Matrix b, Matrix c,
 	int32_t work_size = total / num_works;
 	int32_t remainder = total % num_works;
 	int32_t start = 0;
+
+	pthread_mutex_lock(&pool->lock);
+	pool->total_works += num_works;
+	pthread_mutex_unlock(&pool->lock);
+
 	for(int32_t i = 0;i < num_works;i++){
 		int32_t end = start + work_size + (i < remainder ? 1 : 0);
 		work_t *work = (work_t *)malloc(sizeof(work_t));
@@ -91,7 +110,7 @@ void tpool_destroy(struct tpool *pool) {
 	pthread_cond_broadcast(&pool->cond);
 	pthread_mutex_unlock(&pool->lock);
 
-	for(int32_t i = 0;i <= pool->num_threads;i++){
+	for(int32_t i = 0;i < pool->num_threads;i++){
 		pthread_join(pool->backend_threads[i], NULL);
 	}
 	free(pool->backend_threads);

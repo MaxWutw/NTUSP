@@ -31,6 +31,8 @@ typedef struct tpool {
 	int32_t queue_size;
 	int32_t front, rear;
 	int32_t n;
+	int32_t total_works;
+	int32_t completed;
 	int8_t terminate;
 }tpool_t;
 
