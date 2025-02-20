@@ -1,4 +1,5 @@
 #include <stdio.h>
+<<<<<<< Updated upstream
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -61,5 +62,10 @@ int main(){
 	pthread_mutex_destroy(&mutex);
 	pthread_cond_destroy(&cond);
 
+=======
+#include <stdint.h>
+int main(){
+
+>>>>>>> Stashed changes
 	return 0;
 }
